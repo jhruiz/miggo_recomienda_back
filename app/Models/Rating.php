@@ -2,11 +2,17 @@
 
 namespace App\Models;
 
+use Database\Factories\RatingFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Rating extends Model
 {
+    /** @use HasFactory<RatingFactory> */
+    use HasFactory;
+
     protected $fillable = [
         'job_id',
         'rater_user_id',
@@ -28,6 +34,33 @@ class Rating extends Model
             'enabled_at' => 'datetime',
             'window_closes_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the rating can still be submitted: not yet emitted and the
+     * submission window (if any) has not closed. Mirrors RatingService::submitRating.
+     */
+    public function isOpenForSubmission(): bool
+    {
+        if ($this->rated_at !== null) {
+            return false;
+        }
+
+        return $this->window_closes_at === null || ! now()->greaterThan($this->window_closes_at);
+    }
+
+    /**
+     * Ratings that are still open for submission (same rule as isOpenForSubmission()).
+     *
+     * @param  Builder<Rating>  $query
+     */
+    public function scopeOpenForSubmission(Builder $query): void
+    {
+        $query->whereNull('rated_at')
+            ->where(function (Builder $window): void {
+                $window->whereNull('window_closes_at')
+                    ->orWhere('window_closes_at', '>=', now());
+            });
     }
 
     /**

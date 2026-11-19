@@ -13,6 +13,7 @@ use App\Models\User;
 use Eris\Generators;
 use Eris\TestTrait;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -306,6 +307,7 @@ class QuoteFlowPreservationTest extends TestCase
             'provider_user_id' => $target->id,
             'client_user_id' => $client->id,
             'quote_request_id' => null,
+            'service_category_id' => $this->category()->id,
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => 'Solicitud directa.',
             'total_price' => 0,
@@ -392,11 +394,11 @@ class QuoteFlowPreservationTest extends TestCase
         $routes = app('router')->getRoutes();
         $this->assertStringContainsString(
             'QuoteRequestController@show',
-            $routes->match(\Illuminate\Http\Request::create("/api/v1/quote-requests/{$request->id}", 'GET'))->getActionName(),
+            $routes->match(Request::create("/api/v1/quote-requests/{$request->id}", 'GET'))->getActionName(),
         );
         $this->assertStringContainsString(
             'QuoteController@show',
-            $routes->match(\Illuminate\Http\Request::create("/api/v1/quotes/{$quote->id}", 'GET'))->getActionName(),
+            $routes->match(Request::create("/api/v1/quotes/{$quote->id}", 'GET'))->getActionName(),
         );
     }
 

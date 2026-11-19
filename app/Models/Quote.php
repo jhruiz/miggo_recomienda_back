@@ -2,26 +2,37 @@
 
 namespace App\Models;
 
+use Database\Factories\QuoteFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class Quote extends Model implements HasMedia
 {
-    use InteractsWithMedia;
+    /** @use HasFactory<QuoteFactory> */
+    use HasFactory, InteractsWithMedia;
 
     public const TYPE_PUBLICA = 'publica';
+
     public const TYPE_DIRECTA = 'directa';
 
     public const STATUS_PENDIENTE = 'pendiente';
+
     public const STATUS_ACEPTADA = 'aceptada';
+
     public const STATUS_RECHAZADA = 'rechazada';
+
     public const STATUS_EXPIRADA = 'expirada';
+
     public const STATUS_NO_SELECCIONADA = 'no_seleccionada';
+
     public const STATUS_SOLICITADA = 'solicitada';
+
     public const STATUS_SIN_RESPUESTA = 'sin_respuesta';
 
     /** Nombre de la colección de Media Library para los adjuntos (Requisito 5.3). */
@@ -31,6 +42,7 @@ class Quote extends Model implements HasMedia
         'provider_user_id',
         'client_user_id',
         'quote_request_id',
+        'service_category_id',
         'type',
         'service_description',
         'total_price',
@@ -73,6 +85,14 @@ class Quote extends Model implements HasMedia
     }
 
     /**
+     * The service category of this quote (null for legacy quotes).
+     */
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
+    }
+
+    /**
      * Line items that make up this quote.
      */
     public function items(): HasMany
@@ -100,7 +120,7 @@ class Quote extends Model implements HasMedia
     /**
      * Register a thumbnail conversion for quote attachments.
      */
-    public function registerMediaConversions(?\Spatie\MediaLibrary\MediaCollections\Models\Media $media = null): void
+    public function registerMediaConversions(?Media $media = null): void
     {
         $this->addMediaConversion('thumb')
             ->width(400)

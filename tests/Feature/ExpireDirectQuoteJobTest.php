@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Contracts\QuoteNotifier;
 use App\Jobs\ExpireDirectQuoteJob;
 use App\Models\Quote;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
@@ -38,6 +39,11 @@ class ExpireDirectQuoteJobTest extends TestCase
         }
     }
 
+    private function category(): ServiceCategory
+    {
+        return ServiceCategory::firstOrCreate(['slug' => 'plomeria'], ['name' => 'Plomeria']);
+    }
+
     private function client(): User
     {
         $user = User::factory()->create();
@@ -65,6 +71,7 @@ class ExpireDirectQuoteJobTest extends TestCase
             'provider_user_id' => $this->provider()->id,
             'client_user_id' => $this->client()->id,
             'quote_request_id' => null,
+            'service_category_id' => $this->category()->id,
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => 'Solicitud de cotización directa.',
             'total_price' => 0,
@@ -127,6 +134,7 @@ class ExpireDirectQuoteJobTest extends TestCase
             'provider_user_id' => $this->provider()->id,
             'client_user_id' => $this->client()->id,
             'quote_request_id' => null,
+            'service_category_id' => $this->category()->id,
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => 'Solicitud de cotización directa.',
             'total_price' => 0,

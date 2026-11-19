@@ -6,6 +6,7 @@ use App\Contracts\QuoteNotifier;
 use App\Jobs\ExpireDirectQuoteJob;
 use App\Jobs\ExpireQuoteJob;
 use App\Models\Quote;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -41,6 +42,11 @@ class DirectQuoteTest extends TestCase
         }
     }
 
+    private function category(): ServiceCategory
+    {
+        return ServiceCategory::firstOrCreate(['slug' => 'plomeria'], ['name' => 'Plomeria']);
+    }
+
     private function client(): User
     {
         $user = User::factory()->create();
@@ -68,6 +74,7 @@ class DirectQuoteTest extends TestCase
             'provider_user_id' => $provider->id,
             'client_user_id' => $client->id,
             'quote_request_id' => null,
+            'service_category_id' => $this->category()->id,
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => 'Solicitud de cotización directa.',
             'total_price' => 0,
@@ -113,6 +120,7 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson('/api/v1/quotes/direct', [
             'provider_user_id' => $provider->id,
+            'service_category_id' => $this->category()->id,
             'message' => 'Necesito una cotización para instalación eléctrica.',
         ])
             ->assertCreated()
@@ -141,6 +149,7 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson('/api/v1/quotes/direct', [
             'provider_user_id' => $provider->id,
+            'service_category_id' => $this->category()->id,
         ])->assertCreated();
 
         $expectedDelay = now()->startOfDay()->addDays(7);
@@ -165,6 +174,7 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson('/api/v1/quotes/direct', [
             'provider_user_id' => $notProvider->id,
+            'service_category_id' => $this->category()->id,
         ])->assertStatus(422);
 
         $this->assertDatabaseCount('quotes', 0);
@@ -188,6 +198,7 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson('/api/v1/quotes/direct', [
             'provider_user_id' => $provider->id,
+            'service_category_id' => $this->category()->id,
         ])->assertStatus(409);
 
         // No se creó una sexta.
@@ -212,6 +223,7 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson('/api/v1/quotes/direct', [
             'provider_user_id' => $providerB->id,
+            'service_category_id' => $this->category()->id,
         ])->assertCreated();
     }
 
@@ -307,6 +319,61 @@ class DirectQuoteTest extends TestCase
 
         $this->postJson("/api/v1/quotes/direct/{$quote->id}/respond", $this->validRespondPayload())
             ->assertStatus(409);
+    }
+
+    // --- Requisito 18: categor�a obligatoria ---------------------------------
+
+    public function test_solicitar_cotizacion_directa_guarda_la_categoria(): void
+    {
+        $category = $this->category();
+        $provider = $this->provider();
+
+        Sanctum::actingAs($this->client());
+
+        $this->postJson('/api/v1/quotes/direct', [
+            'provider_user_id' => $provider->id,
+            'service_category_id' => $category->id,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('quotes', [
+            'provider_user_id' => $provider->id,
+            'type' => Quote::TYPE_DIRECTA,
+            'service_category_id' => $category->id,
+        ]);
+    }
+
+    public function test_solicitar_sin_categoria_es_422_y_no_crea_cotizacion(): void
+    {
+        Queue::fake();
+
+        $provider = $this->provider();
+
+        Sanctum::actingAs($this->client());
+
+        $this->postJson('/api/v1/quotes/direct', [
+            'provider_user_id' => $provider->id,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('service_category_id');
+
+        $this->assertDatabaseCount('quotes', 0);
+        Queue::assertNotPushed(ExpireDirectQuoteJob::class);
+    }
+
+    public function test_solicitar_con_categoria_inexistente_es_422(): void
+    {
+        $provider = $this->provider();
+
+        Sanctum::actingAs($this->client());
+
+        $this->postJson('/api/v1/quotes/direct', [
+            'provider_user_id' => $provider->id,
+            'service_category_id' => 999999,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('service_category_id');
+
+        $this->assertDatabaseCount('quotes', 0);
     }
 
     protected function tearDown(): void

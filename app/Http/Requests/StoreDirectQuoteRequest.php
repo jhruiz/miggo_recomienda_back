@@ -36,6 +36,7 @@ class StoreDirectQuoteRequest extends FormRequest
     {
         return [
             'provider_user_id' => ['required', 'integer', 'exists:users,id'],
+            'service_category_id' => ['required', 'integer', 'exists:service_categories,id'],
             'message' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ];
     }
@@ -48,6 +49,9 @@ class StoreDirectQuoteRequest extends FormRequest
         return [
             'provider_user_id.required' => 'Debes indicar el prestador al que solicitas la cotización.',
             'provider_user_id.exists' => 'El prestador indicado no existe.',
+            'service_category_id.required' => 'Debes indicar la categoría del servicio que necesitas.',
+            'service_category_id.integer' => 'La categoría del servicio no es válida.',
+            'service_category_id.exists' => 'La categoría indicada no existe.',
             'message.max' => 'El mensaje no puede exceder los 1000 caracteres.',
         ];
     }
@@ -59,6 +63,7 @@ class StoreDirectQuoteRequest extends FormRequest
     {
         return [
             'provider_user_id' => 'prestador',
+            'service_category_id' => 'categoría',
             'message' => 'mensaje',
         ];
     }

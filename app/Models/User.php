@@ -103,6 +103,14 @@ class User extends Authenticatable implements HasMedia, MustVerifyEmail
     }
 
     /**
+     * Wall privacy and behavior-logging preferences (no row means "unanswered").
+     */
+    public function feedPreference(): HasOne
+    {
+        return $this->hasOne(FeedPreference::class);
+    }
+
+    /**
      * Quote requests created by this user as a client.
      */
     public function quoteRequests(): HasMany

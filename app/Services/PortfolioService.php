@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Exceptions\PortfolioCountLimitReachedException;
 use App\Exceptions\PortfolioPhotoLimitReachedException;
+use App\Http\Resources\PortfolioItemResource;
+use App\Http\Resources\PortfolioResource;
 use App\Models\Portfolio;
 use App\Models\PortfolioItem;
 use App\Models\ProviderProfile;
@@ -11,9 +13,11 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Spatie\MediaLibrary\MediaCollections\Exceptions\FileIsTooBig;
 use Spatie\MediaLibrary\MediaCollections\Exceptions\FileUnacceptableForCollection;
+use Throwable;
 
 /**
  * Servicio de Portafolios múltiples por Prestador.
@@ -35,7 +39,7 @@ final class PortfolioService
     {
         return $profile->portfolios()
             ->withCount('items')
-            ->with(['items.media'])
+            ->with(['items.media', 'serviceCategory'])
             ->get();
     }
 
@@ -58,6 +62,7 @@ final class PortfolioService
                 $portfolio = $profile->portfolios()->create([
                     'name' => $data['name'],
                     'description' => $data['description'] ?? null,
+                    'service_category_id' => $data['service_category_id'],
                 ]);
 
                 return $portfolio->refresh();
@@ -73,7 +78,7 @@ final class PortfolioService
     public function update(Portfolio $portfolio, array $data): Portfolio
     {
         try {
-            $portfolio->fill(array_intersect_key($data, array_flip(['name', 'description'])));
+            $portfolio->fill(array_intersect_key($data, array_flip(['name', 'description', 'service_category_id'])));
             $portfolio->save();
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['name' => self::DUPLICATE_NAME_MESSAGE]);
@@ -140,9 +145,27 @@ final class PortfolioService
         return $item->refresh();
     }
 
+    /**
+     * Borra la foto con sus archivos. Media Library elimina el registro Media y
+     * luego sus archivos dentro del evento `deleting` de la foto; la transacción
+     * garantiza que, si falla el borrado de archivos, tanto la foto como su
+     * Media se conserven y el borrado pueda reintentarse.
+     *
+     * @throws Throwable
+     */
     public function deleteItem(PortfolioItem $item): void
     {
-        $item->delete();
+        try {
+            DB::transaction(fn (): ?bool => $item->delete());
+        } catch (Throwable $e) {
+            Log::error('No se pudo borrar la foto del portafolio.', [
+                'portfolio_item_id' => $item->getKey(),
+                'portfolio_id' => $item->portfolio_id,
+                'exception' => $e,
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
@@ -152,19 +175,7 @@ final class PortfolioService
      */
     public function presentForOwner(Portfolio $portfolio): array
     {
-        $portfolio->loadMissing('items.media');
-
-        $items = $portfolio->items->sortBy('id')->values();
-
-        return [
-            'id' => $portfolio->id,
-            'name' => $portfolio->name,
-            'description' => $portfolio->description,
-            'photos_count' => $items->count(),
-            'cover_thumb_url' => $this->coverThumbUrl($items),
-            'created_at' => $portfolio->created_at?->toIso8601String(),
-            'items' => $items->map(fn (PortfolioItem $item): array => $this->presentItem($item))->all(),
-        ];
+        return (new PortfolioResource($portfolio))->resolve();
     }
 
     /**
@@ -172,18 +183,7 @@ final class PortfolioService
      */
     public function presentItem(PortfolioItem $item): array
     {
-        $item->loadMissing('media');
-
-        $media = $item->getFirstMedia(self::MEDIA_COLLECTION);
-
-        return [
-            'id' => $item->id,
-            'portfolio_id' => $item->portfolio_id,
-            'description' => $item->description,
-            'image_url' => $media?->getUrl(),
-            'thumb_url' => $media?->hasGeneratedConversion('thumb') ? $media->getUrl('thumb') : null,
-            'created_at' => $item->created_at?->toIso8601String(),
-        ];
+        return (new PortfolioItemResource($item))->resolve();
     }
 
     /**
@@ -195,41 +195,23 @@ final class PortfolioService
     {
         $portfolios = $profile->portfolios()
             ->whereHas('items')
-            ->with(['items.media'])
+            ->with(['items.media', 'serviceCategory'])
             ->reorder()
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
 
-        return $portfolios->map(function (Portfolio $portfolio): array {
-            $items = $portfolio->items->sortBy('id')->values();
-
-            return [
-                'id' => $portfolio->id,
-                'name' => $portfolio->name,
-                'description' => $portfolio->description,
-                'cover_thumb_url' => $this->coverThumbUrl($items),
-                'items' => $items->map(function (PortfolioItem $item): array {
-                    $presented = $this->presentItem($item);
-
-                    return [
-                        'id' => $presented['id'],
-                        'description' => $presented['description'],
-                        'image_url' => $presented['image_url'],
-                        'thumb_url' => $presented['thumb_url'],
-                    ];
-                })->all(),
-            ];
-        })->values()->all();
+        return $portfolios
+            ->map(fn (Portfolio $portfolio): array => (new PortfolioResource($portfolio, true))->resolve())
+            ->values()
+            ->all();
     }
 
     /**
-     * @param  Collection<int, PortfolioItem>  $items  ordenados por id
+     * Cantidad de Portafolios del Prestador sin categoría (aviso de pendientes).
      */
-    private function coverThumbUrl(Collection $items): ?string
+    public function countUncategorized(ProviderProfile $profile): int
     {
-        $first = $items->first();
-
-        return $first === null ? null : $this->presentItem($first)['thumb_url'];
+        return $profile->portfolios()->whereNull('service_category_id')->count();
     }
 }

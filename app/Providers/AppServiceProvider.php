@@ -6,19 +6,27 @@ use App\Contracts\JobCompletionHandler;
 use App\Contracts\JobNotifier;
 use App\Contracts\QuoteNotifier;
 use App\Contracts\QuoteRequestNotifier;
+use App\Http\Responses\ApiResponse;
+use App\Models\Job;
+use App\Models\User;
+use App\Services\JobService;
+use App\Services\RatingService;
+use App\Support\ComplianceJobCompletionHandler;
+use App\Support\CompositeJobCompletionHandler;
 use App\Support\LoginRateLimiter;
 use App\Support\NotifyingJobNotifier;
 use App\Support\NotifyingQuoteNotifier;
 use App\Support\NotifyingQuoteRequestNotifier;
-use App\Support\ComplianceJobCompletionHandler;
-use App\Support\CompositeJobCompletionHandler;
 use App\Support\RatingsJobCompletionHandler;
-use App\Services\JobService;
-use App\Services\RatingService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Spatie\MediaLibrary\Conversions\Jobs\PerformConversionsJob;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -74,6 +82,34 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureRateLimiting();
+
+        // Solo el Prestador del Trabajo gestiona sus Fotos_Trabajo (DD15).
+        Gate::define('manage-job-photos', fn (User $user, Job $job): bool => (int) $job->provider_user_id === (int) $user->getKey());
+
+        $this->logFailedMediaConversions();
+    }
+
+    /**
+     * Log failed Spatie conversion jobs so they can be retried (Requisito 9.6).
+     */
+    protected function logFailedMediaConversions(): void
+    {
+        Event::listen(function (JobFailed $event): void {
+            $payload = $event->job->payload();
+            $command = $payload['data']['commandName'] ?? $payload['displayName'] ?? null;
+
+            if ($command !== PerformConversionsJob::class) {
+                return;
+            }
+
+            Log::error('Media conversion job failed.', [
+                'job' => $command,
+                'connection' => $event->connectionName,
+                'queue' => $event->job->getQueue(),
+                'job_id' => $event->job->getJobId(),
+                'exception' => $event->exception->getMessage(),
+            ]);
+        });
     }
 
     /**
@@ -107,5 +143,34 @@ class AppServiceProvider extends ServiceProvider
                     return LoginRateLimiter::lockoutResponse($retryAfter);
                 });
         });
+
+        // Limiters del Muro de portafolios (Requisitos 8.6 a 8.8): ventana fija
+        // de 60 s por usuario autenticado.
+        foreach ([
+            'wall-read' => 60,
+            'wall-interactions' => 30,
+            'wall-events' => 120,
+            'wall-privacy' => 10,
+            'job-photos' => 30,
+        ] as $name => $maxAttempts) {
+            RateLimiter::for($name, function (Request $request) use ($maxAttempts) {
+                return Limit::perMinute($maxAttempts)
+                    ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()))
+                    ->response(function (Request $request, array $headers) {
+                        $retryAfter = max(1, min(60, (int) ($headers['Retry-After'] ?? 60)));
+
+                        return ApiResponse::error(
+                            message: sprintf(
+                                'Demasiadas solicitudes. Intenta nuevamente en %d %s.',
+                                $retryAfter,
+                                $retryAfter === 1 ? 'segundo' : 'segundos',
+                            ),
+                            errors: ['retry_after' => [$retryAfter]],
+                            status: 429,
+                            meta: ['retry_after' => $retryAfter],
+                        )->header('Retry-After', (string) $retryAfter);
+                    });
+            });
+        }
     }
 }

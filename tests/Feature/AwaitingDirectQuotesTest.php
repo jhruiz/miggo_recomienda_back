@@ -37,6 +37,7 @@ class AwaitingDirectQuotesTest extends TestCase
             'provider_user_id' => $provider->id,
             'client_user_id' => $client->id,
             'quote_request_id' => null,
+            'service_category_id' => $this->category()->id,
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => $description,
             'total_price' => 0,

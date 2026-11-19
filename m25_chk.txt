@@ -1,0 +1,10 @@
+
+
+    Directorio: C:\laragon\www\miggo-recomienda\backend
+
+
+Mode                 LastWriteTime         Length Name                         
+----                 -------------         ------ ----                         
+-a----      18/11/2026  8:33?p.?m.              0 m25_chk.txt                  
+
+

@@ -37,6 +37,7 @@ class StorePortfolioRequest extends FormRequest
                 new UniquePortfolioName($this->user()?->providerProfile?->id),
             ],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'service_category_id' => ['required', 'integer', 'exists:service_categories,id'],
         ];
     }
 
@@ -50,6 +51,9 @@ class StorePortfolioRequest extends FormRequest
             'name.string' => 'El nombre del portafolio no es válido.',
             'name.max' => 'El nombre no puede exceder los 100 caracteres.',
             'description.max' => 'La descripción no puede exceder los 1000 caracteres.',
+            'service_category_id.required' => 'La categoría del portafolio es obligatoria.',
+            'service_category_id.integer' => 'La categoría del portafolio no es válida.',
+            'service_category_id.exists' => 'La categoría seleccionada no existe.',
         ];
     }
 
@@ -61,6 +65,7 @@ class StorePortfolioRequest extends FormRequest
         return [
             'name' => 'nombre',
             'description' => 'descripción',
+            'service_category_id' => 'categoría',
         ];
     }
 }

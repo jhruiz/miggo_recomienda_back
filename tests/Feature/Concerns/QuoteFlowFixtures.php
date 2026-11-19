@@ -95,10 +95,37 @@ trait QuoteFlowFixtures
         ]);
     }
 
+    /**
+     * Cotización directa con categoría (obligatoria desde POST /quotes/direct).
+     */
+    protected function makeDirectQuote(
+        User $provider,
+        ?User $client = null,
+        string $status = Quote::STATUS_SOLICITADA,
+        ?ServiceCategory $category = null,
+    ): Quote {
+        $client ??= $this->client();
+        $category ??= $this->category();
+
+        return Quote::create([
+            'provider_user_id' => $provider->id,
+            'client_user_id' => $client->id,
+            'quote_request_id' => null,
+            'service_category_id' => $category->id,
+            'type' => Quote::TYPE_DIRECTA,
+            'service_description' => 'Solicitud de cotización directa.',
+            'total_price' => 0,
+            'delivery_days' => 0,
+            'expires_at' => now()->startOfDay()->addDays(7),
+            'status' => $status,
+        ]);
+    }
+
     protected function makeJob(Quote $quote, string $status = Job::STATUS_EN_PROGRESO): Job
     {
         return Job::create([
             'quote_id' => $quote->id,
+            'service_category_id' => $quote->service_category_id ?? $quote->quoteRequest?->service_category_id,
             'client_user_id' => $quote->client_user_id,
             'provider_user_id' => $quote->provider_user_id,
             'status' => $status,

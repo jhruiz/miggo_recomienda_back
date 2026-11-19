@@ -13,8 +13,10 @@ use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteRequest;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,8 +47,7 @@ class QuoteService
     public function __construct(
         private readonly QuoteNotifier $notifier,
         private readonly JobService $jobService,
-    ) {
-    }
+    ) {}
 
     /**
      * Crea una Cotización pública en respuesta a una Solicitud_Cotización
@@ -140,7 +141,7 @@ class QuoteService
      * Cotizaciones enviadas por el Prestador (todos los estados, incluye
      * directas "solicitada").
      */
-    public function paginateSentBy(User $provider, ?string $status = null, int $perPage = 20): \Illuminate\Pagination\LengthAwarePaginator
+    public function paginateSentBy(User $provider, ?string $status = null, int $perPage = 20): LengthAwarePaginator
     {
         return $this->listingQuery()
             ->where('provider_user_id', $provider->id)
@@ -151,7 +152,7 @@ class QuoteService
     /**
      * Cotizaciones recibidas por el Cliente (excluye "solicitada" y "sin_respuesta").
      */
-    public function paginateReceivedBy(User $client, ?string $status = null, int $perPage = 20): \Illuminate\Pagination\LengthAwarePaginator
+    public function paginateReceivedBy(User $client, ?string $status = null, int $perPage = 20): LengthAwarePaginator
     {
         return $this->listingQuery()
             ->where('client_user_id', $client->id)
@@ -164,7 +165,7 @@ class QuoteService
      * Solicitudes de Cotización directa del Cliente aún sin responder
      * ("solicitada" y "sin_respuesta"), o solo las del estado indicado.
      */
-    public function paginateAwaitingBy(User $client, ?string $status = null, int $perPage = 20): \Illuminate\Pagination\LengthAwarePaginator
+    public function paginateAwaitingBy(User $client, ?string $status = null, int $perPage = 20): LengthAwarePaginator
     {
         return $this->listingQuery()
             ->where('client_user_id', $client->id)
@@ -177,7 +178,7 @@ class QuoteService
             ->paginate($perPage);
     }
 
-    private function listingQuery(): \Illuminate\Database\Eloquent\Builder
+    private function listingQuery(): Builder
     {
         return Quote::query()
             ->with(['provider:id,name', 'provider.media', 'client:id,name', 'client.media', 'quoteRequest:id,title', 'job:id,quote_id'])
@@ -300,7 +301,7 @@ class QuoteService
      * Tras crear la Cotización se notifica al Prestador (Requisito 10.1) y se
      * programa ExpireDirectQuoteJob con delay de 7 días (Requisito 10.3).
      *
-     * @param  array{provider_user_id: int, message?: string|null}  $data
+     * @param  array{provider_user_id: int, service_category_id: int, message?: string|null}  $data
      *
      * @throws DirectQuoteRequestException
      */
@@ -339,6 +340,7 @@ class QuoteService
             'provider_user_id' => $provider->id,
             'client_user_id' => $client->id,
             'quote_request_id' => null,
+            'service_category_id' => $data['service_category_id'],
             'type' => Quote::TYPE_DIRECTA,
             'service_description' => $message,
             'total_price' => 0,
@@ -444,7 +446,7 @@ class QuoteService
     private function assertActionable(Quote $quote, User $client): void
     {
         if ($quote->client_user_id !== $client->id) {
-            throw new QuoteNotAuthorizedException();
+            throw new QuoteNotAuthorizedException;
         }
 
         if ($quote->status === Quote::STATUS_EXPIRADA) {

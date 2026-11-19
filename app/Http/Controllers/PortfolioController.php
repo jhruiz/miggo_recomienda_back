@@ -23,9 +23,7 @@ class PortfolioController extends Controller
     use EnsuresPortfolioOwnership;
     use HasApiResponses;
 
-    public function __construct(private readonly PortfolioService $portfolioService)
-    {
-    }
+    public function __construct(private readonly PortfolioService $portfolioService) {}
 
     /**
      * GET /api/v1/profile/provider/portfolios
@@ -55,6 +53,7 @@ class PortfolioController extends Controller
                 'count' => $portfolios->count(),
                 'max_portfolios' => PortfolioService::MAX_PORTFOLIOS_PER_PROVIDER,
                 'max_photos_per_portfolio' => PortfolioService::MAX_ITEMS_PER_PORTFOLIO,
+                'uncategorized_count' => $this->portfolioService->countUncategorized($profile),
             ],
         );
     }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\JobController;
+use App\Http\Controllers\JobPhotoController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PortfolioController;
@@ -11,8 +12,19 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProviderProfileController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\QuoteRequestController;
-use App\Http\Controllers\ServiceCategoryController;
 use App\Http\Controllers\RatingController;
+use App\Http\Controllers\ServiceCategoryController;
+use App\Http\Controllers\WallEventController;
+use App\Http\Controllers\WallFiltersController;
+use App\Http\Controllers\WallJobController;
+use App\Http\Controllers\WallJobLikeController;
+use App\Http\Controllers\WallJobSaveController;
+use App\Http\Controllers\WallPortfolioController;
+use App\Http\Controllers\WallPortfolioLikeController;
+use App\Http\Controllers\WallPortfolioSaveController;
+use App\Http\Controllers\WallPrivacyController;
+use App\Http\Controllers\WallSavedJobController;
+use App\Http\Controllers\WallSavedPortfolioController;
 use App\Http\Responses\ApiResponse;
 use App\Services\ProfileService;
 use Illuminate\Http\Request;
@@ -261,6 +273,10 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/jobs', [JobController::class, 'index']);
 
+    // Trabajos por calificar del Cliente (literal: va antes de /jobs/{job}).
+    Route::get('/jobs/pending-rating', [JobController::class, 'pendingRating'])
+        ->middleware('throttle:wall-read');
+
     Route::get('/jobs/{job}', [JobController::class, 'show'])
         ->whereNumber('job');
 
@@ -299,6 +315,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // motivos.
     Route::post('/jobs/{job}/confirm-cancel', [JobController::class, 'confirmCancel'])
         ->whereNumber('job');
+
+    // --- Fotos de resultado del Trabajo (Fotos_Trabajo) --------------------
+    // Solo el Prestador del Trabajo (Gate manage-job-photos). Rutas con
+    // sufijo propio: no chocan con los literales de /jobs, que van antes de
+    // /jobs/{job}.
+    Route::post('/jobs/{job}/photos', [JobPhotoController::class, 'store'])
+        ->whereNumber('job')
+        ->middleware('throttle:job-photos');
+
+    Route::delete('/jobs/{job}/photos/{photo}', [JobPhotoController::class, 'destroy'])
+        ->whereNumber(['job', 'photo'])
+        ->middleware('throttle:job-photos');
 });
 
 /*
@@ -379,6 +407,51 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
             Route::put('/{portfolio}/items/{item}', [PortfolioItemController::class, 'update']);
             Route::delete('/{portfolio}/items/{item}', [PortfolioItemController::class, 'destroy']);
         });
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Módulo: Muro de portafolios (/api/v1/wall) — spec muro-de-portafolios
+|--------------------------------------------------------------------------
+| Pestañas Trabajos y Portafolios, filtros, guardados, interacciones, eventos
+| y privacidad. Todas requieren auth:sanctum. Los segmentos
+| literales se declaran antes de cualquier ruta con parámetro.
+*/
+Route::middleware('auth:sanctum')->prefix('wall')->group(function () {
+    // Rate limiting por usuario (Req. 8.6 a 8.8), aplicado tras auth:sanctum.
+    Route::middleware('throttle:wall-read')->group(function () {
+        Route::get('/filters', [WallFiltersController::class, 'index']);
+        Route::get('/saved/jobs', [WallSavedJobController::class, 'index']);
+        Route::get('/saved/portfolios', [WallSavedPortfolioController::class, 'index']);
+
+        // Pestañas Trabajos y Portafolios: listados (literales) antes del detalle con parámetro.
+        Route::get('/jobs', [WallJobController::class, 'index']);
+        Route::get('/jobs/{job}', [WallJobController::class, 'show'])->whereNumber('job');
+        Route::get('/portfolios', [WallPortfolioController::class, 'index']);
+        Route::get('/portfolios/{portfolio}', [WallPortfolioController::class, 'show'])->whereNumber('portfolio');
+    });
+
+    Route::middleware('throttle:wall-events')->group(function () {
+        Route::post('/events', [WallEventController::class, 'store']);
+    });
+
+    Route::middleware('throttle:wall-privacy')->group(function () {
+        Route::get('/privacy', [WallPrivacyController::class, 'show']);
+        Route::put('/privacy', [WallPrivacyController::class, 'update']);
+        Route::get('/privacy/events', [WallPrivacyController::class, 'events']);
+        Route::delete('/privacy/events', [WallPrivacyController::class, 'destroyEvents']);
+    });
+
+    Route::middleware('throttle:wall-interactions')->group(function () {
+        Route::put('/portfolios/{portfolio}/like', [WallPortfolioLikeController::class, 'store'])->whereNumber('portfolio');
+        Route::delete('/portfolios/{portfolio}/like', [WallPortfolioLikeController::class, 'destroy'])->whereNumber('portfolio');
+        Route::put('/portfolios/{portfolio}/save', [WallPortfolioSaveController::class, 'store'])->whereNumber('portfolio');
+        Route::delete('/portfolios/{portfolio}/save', [WallPortfolioSaveController::class, 'destroy'])->whereNumber('portfolio');
+        Route::put('/jobs/{job}/like', [WallJobLikeController::class, 'store'])->whereNumber('job');
+        Route::delete('/jobs/{job}/like', [WallJobLikeController::class, 'destroy'])->whereNumber('job');
+        Route::put('/jobs/{job}/save', [WallJobSaveController::class, 'store'])->whereNumber('job');
+        Route::delete('/jobs/{job}/save', [WallJobSaveController::class, 'destroy'])->whereNumber('job');
     });
 });
 

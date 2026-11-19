@@ -11,6 +11,7 @@ use App\Http\Requests\RespondDirectQuoteRequest;
 use App\Http\Requests\StoreDirectQuoteRequest;
 use App\Http\Requests\StoreQuoteRequest;
 use App\Http\Responses\HasApiResponses;
+use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteRequest;
 use App\Services\QuoteService;
@@ -40,9 +41,7 @@ class QuoteController extends Controller
 {
     use HasApiResponses;
 
-    public function __construct(private readonly QuoteService $service)
-    {
-    }
+    public function __construct(private readonly QuoteService $service) {}
 
     /**
      * POST /api/v1/quotes  (auth:sanctum + role.provider — Prestador)
@@ -322,7 +321,7 @@ class QuoteController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function presentJob(\App\Models\Job $job): array
+    private function presentJob(Job $job): array
     {
         return [
             'id' => $job->id,
@@ -380,6 +379,7 @@ class QuoteController extends Controller
             ...AvatarPresenter::thumb($quote->client, 'client_'),
             'quote_request_id' => $quote->quote_request_id,
             'type' => $quote->type,
+            'service_category_id' => $quote->service_category_id,
             'service_description' => $quote->service_description,
             'total_price' => (float) $quote->total_price,
             'delivery_days' => $quote->delivery_days,

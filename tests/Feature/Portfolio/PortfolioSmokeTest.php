@@ -3,10 +3,12 @@
 namespace Tests\Feature\Portfolio;
 
 use App\Models\ProviderProfile;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -45,12 +47,14 @@ class PortfolioSmokeTest extends TestCase
         $owner = $this->makeProvider();
         $other = $this->makeProvider();
 
+        $categoryId = ServiceCategory::factory()->create()->id;
+
         $this->actingAs($owner, 'sanctum');
-        $a = $this->postJson($base, ['name' => 'A'])->assertCreated()->json('data.portfolio.id');
-        $b = $this->postJson($base, ['name' => 'B'])->assertCreated()->json('data.portfolio.id');
+        $a = $this->postJson($base, ['name' => 'A', 'service_category_id' => $categoryId])->assertCreated()->json('data.portfolio.id');
+        $b = $this->postJson($base, ['name' => 'B', 'service_category_id' => $categoryId])->assertCreated()->json('data.portfolio.id');
 
         // 422 por nombre duplicado (sin distinguir mayúsculas).
-        $this->postJson($base, ['name' => ' a '])->assertStatus(422)->assertJsonValidationErrors('name');
+        $this->postJson($base, ['name' => ' a ', 'service_category_id' => $categoryId])->assertStatus(422)->assertJsonValidationErrors('name');
 
         $img = fn () => ['image' => UploadedFile::fake()->image('x.jpg', 10, 10)];
         $itemId = $this->post("{$base}/{$a}/items", $img(), ['Accept' => 'application/json'])
@@ -68,9 +72,9 @@ class PortfolioSmokeTest extends TestCase
 
         // 409 al superar 20 portafolios (ya hay 2).
         for ($i = 3; $i <= 20; $i++) {
-            $this->postJson($base, ['name' => "P{$i}"])->assertCreated();
+            $this->postJson($base, ['name' => "P{$i}", 'service_category_id' => $categoryId])->assertCreated();
         }
-        $this->postJson($base, ['name' => 'Extra'])->assertStatus(409);
+        $this->postJson($base, ['name' => 'Extra', 'service_category_id' => $categoryId])->assertStatus(409);
 
         // 403 para portafolio ajeno.
         $this->actingAs($other, 'sanctum');
@@ -81,9 +85,9 @@ class PortfolioSmokeTest extends TestCase
 
         // Borrado en cascada de ítems y media.
         $this->actingAs($owner, 'sanctum');
-        $this->assertSame(10, \Spatie\MediaLibrary\MediaCollections\Models\Media::count());
+        $this->assertSame(10, Media::count());
         $this->deleteJson("{$base}/{$a}")->assertOk()->assertJsonPath('data.deleted_items_count', 10);
-        $this->assertSame(0, \Spatie\MediaLibrary\MediaCollections\Models\Media::count());
+        $this->assertSame(0, Media::count());
         $this->assertDatabaseMissing('portfolio_items', ['portfolio_id' => $a]);
     }
 
@@ -109,6 +113,7 @@ class PortfolioSmokeTest extends TestCase
         $create = $this->postJson('/api/v1/profile/provider/portfolios', [
             'name' => 'Cocinas',
             'description' => 'Trabajos de cocina',
+            'service_category_id' => ServiceCategory::factory()->create()->id,
         ])->assertCreated();
         $id = $create->json('data.portfolio.id');
         $this->assertNotNull($id);

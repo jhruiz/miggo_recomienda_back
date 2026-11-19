@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Contracts\JobCompletionHandler;
 use App\Contracts\JobNotifier;
+use App\Exceptions\JobPhotoLimitExceededException;
 use App\Exceptions\JobTransitionException;
 use App\Jobs\AutoCompleteJobJob;
 use App\Models\Job;
@@ -11,6 +12,7 @@ use App\Models\ProviderProfile;
 use App\Models\Quote;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -58,8 +60,8 @@ class JobService
         private readonly JobNotifier $notifier,
         private readonly JobCompletionHandler $completionHandler,
         private readonly ChatService $chatService,
-    ) {
-    }
+        private readonly JobPhotoService $photoService,
+    ) {}
 
     /**
      * Crea el Trabajo originado al aceptar una Cotización (Requisitos 7.1, 7.2).
@@ -92,6 +94,8 @@ class JobService
                 'quote_id' => $quote->id,
                 'client_user_id' => $quote->client_user_id,
                 'provider_user_id' => $quote->provider_user_id,
+                'service_category_id' => $quote->service_category_id
+                    ?? $quote->quoteRequest?->service_category_id,
                 'status' => Job::STATUS_EN_PROGRESO,
                 'start_date' => $startDate,
                 'estimated_delivery_date' => $estimatedDeliveryDate,
@@ -154,17 +158,26 @@ class JobService
      *    Cliente no responde, el Trabajo se completará automáticamente
      *    (Requisito 7.5).
      *
+     * @param  list<UploadedFile>  $photos  Fotos_Trabajo opcionales (0 a 5).
+     *
      * @throws JobTransitionException si el Trabajo no admite ser completado.
+     * @throws JobPhotoLimitExceededException si las fotos superan el máximo.
      */
-    public function markAsCompleted(Job $job): Job
+    public function markAsCompleted(Job $job, array $photos = []): Job
     {
         if (! $this->isAwaitingProviderCompletion($job)) {
             throw JobTransitionException::notInProgressForCompletion();
         }
 
-        $job = DB::transaction(function () use ($job): Job {
+        // Las fotos (0 a 5) se guardan en la misma transacción que la fecha de
+        // cierre: si fallan, el Trabajo no se cierra y no se notifica.
+        $job = DB::transaction(function () use ($job, $photos): Job {
             $job->actual_completion_date = Carbon::today();
             $job->save();
+
+            if ($photos !== []) {
+                $this->photoService->addPhotos($job, $photos);
+            }
 
             return $job->refresh();
         });

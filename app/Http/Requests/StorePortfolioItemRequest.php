@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\ImageUploadRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -19,9 +20,6 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class StorePortfolioItemRequest extends FormRequest
 {
-    /** Tamaño máximo del archivo en KB (10 MB). */
-    private const MAX_FILE_SIZE_KB = 10240;
-
     public function authorize(): bool
     {
         return $this->user() !== null;
@@ -33,12 +31,7 @@ class StorePortfolioItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'image' => [
-                'required',
-                'file',
-                'mimes:jpg,jpeg,png,webp',
-                'max:' . self::MAX_FILE_SIZE_KB,
-            ],
+            'image' => ImageUploadRules::rules(),
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
         ];
     }
@@ -49,10 +42,7 @@ class StorePortfolioItemRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'image.required' => 'Debes adjuntar una imagen.',
-            'image.file' => 'El archivo adjunto no es válido.',
-            'image.mimes' => 'Tipo de archivo no permitido. Solo se aceptan imágenes JPG, PNG o WEBP.',
-            'image.max' => 'El tamaño del archivo excede el máximo permitido de 10 MB.',
+            ...ImageUploadRules::messages('image'),
             'description.max' => 'La descripción no puede exceder los 500 caracteres.',
         ];
     }

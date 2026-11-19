@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\JobPhotoLimitExceededException;
 use App\Exceptions\JobTransitionException;
 use App\Http\Requests\CancelJobRequest;
+use App\Http\Requests\CompleteJobRequest;
 use App\Http\Requests\RejectJobCompletionRequest;
 use App\Http\Responses\HasApiResponses;
 use App\Models\Job;
+use App\Services\JobPhotoService;
 use App\Services\JobService;
+use App\Services\WallJobService;
 use App\Support\AvatarPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,9 +43,10 @@ class JobController extends Controller
 {
     use HasApiResponses;
 
-    public function __construct(private readonly JobService $service)
-    {
-    }
+    public function __construct(
+        private readonly JobService $service,
+        private readonly JobPhotoService $photoService,
+    ) {}
 
     /**
      * GET /api/v1/jobs  (auth:sanctum)
@@ -61,6 +66,20 @@ class JobController extends Controller
         return $this->ok(
             data: ['jobs' => $jobs],
             message: $message,
+        );
+    }
+
+    /**
+     * GET /api/v1/jobs/pending-rating  (auth:sanctum, throttle:wall-read)
+     *
+     * Trabajos completados del usuario como Cliente con su calificación aún
+     * abierta (misma regla que can_rate_by_me y RatingService::submitRating).
+     */
+    public function pendingRating(Request $request, WallJobService $wallJobs): JsonResponse
+    {
+        return $this->ok(
+            data: $wallJobs->pendingRating($request->user()),
+            message: 'Trabajos por calificar.',
         );
     }
 
@@ -92,7 +111,7 @@ class JobController extends Controller
      * fecha real, notifica al Cliente para confirmar y despacha el
      * auto-completado a 7 días. 403 si no es el Prestador; 409 si no procede.
      */
-    public function complete(Request $request, Job $job): JsonResponse
+    public function complete(CompleteJobRequest $request, Job $job): JsonResponse
     {
         if ($job->provider_user_id !== $request->user()->id) {
             return $this->error(
@@ -102,8 +121,8 @@ class JobController extends Controller
         }
 
         try {
-            $job = $this->service->markAsCompleted($job);
-        } catch (JobTransitionException $e) {
+            $job = $this->service->markAsCompleted($job, $request->file('photos') ?? []);
+        } catch (JobTransitionException|JobPhotoLimitExceededException $e) {
             return $this->error($e->getMessage(), status: $e->getStatus());
         }
 
@@ -251,7 +270,7 @@ class JobController extends Controller
     {
         $job->loadMissing(['client:id,name', 'client.media', 'provider:id,name', 'provider.media']);
 
-        return [
+        $presented = [
             'id' => $job->id,
             'quote_id' => $job->quote_id,
             'client_user_id' => $job->client_user_id,
@@ -264,6 +283,7 @@ class JobController extends Controller
             'start_date' => $job->start_date?->toDateString(),
             'estimated_delivery_date' => $job->estimated_delivery_date?->toDateString(),
             'actual_completion_date' => $job->actual_completion_date?->toDateString(),
+            'completed_at' => $job->completed_at?->toIso8601String(),
             'rejection_reason' => $job->rejection_reason,
             'client_requested_cancel' => (bool) $job->client_requested_cancel,
             'provider_requested_cancel' => (bool) $job->provider_requested_cancel,
@@ -271,5 +291,14 @@ class JobController extends Controller
             'created_at' => $job->created_at?->toIso8601String(),
             'updated_at' => $job->updated_at?->toIso8601String(),
         ];
+
+        // Las Fotos_Trabajo (con estado de conversiones) solo las ve el Prestador.
+        $viewerId = auth()->id();
+
+        if ($viewerId !== null && (int) $job->provider_user_id === (int) $viewerId) {
+            $presented['photos'] = $this->photoService->presentOwner($job);
+        }
+
+        return $presented;
     }
 }

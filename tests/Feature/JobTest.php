@@ -147,6 +147,60 @@ class JobTest extends TestCase
         $this->assertDatabaseCount('service_jobs', 1);
     }
 
+    // --- Requisito 18: categoría del Trabajo --------------------------------
+
+    public function test_create_job_copia_la_categoria_de_la_solicitud_en_cotizacion_publica(): void
+    {
+        $quote = $this->makeQuote($this->client(), $this->provider());
+
+        $this->assertNull($quote->service_category_id);
+
+        $job = $this->service()->createJob($quote);
+
+        $this->assertSame($this->category()->id, $job->service_category_id);
+        $this->assertDatabaseHas('service_jobs', [
+            'id' => $job->id,
+            'service_category_id' => $this->category()->id,
+        ]);
+    }
+
+    public function test_create_job_copia_la_categoria_de_la_cotizacion_directa(): void
+    {
+        $category = $this->category('electricidad');
+
+        $quote = Quote::create([
+            'provider_user_id' => $this->provider()->id,
+            'client_user_id' => $this->client()->id,
+            'quote_request_id' => null,
+            'service_category_id' => $category->id,
+            'type' => Quote::TYPE_DIRECTA,
+            'service_description' => 'Servicio directo',
+            'total_price' => 100.00,
+            'delivery_days' => 5,
+            'expires_at' => now()->addDays(7),
+            'status' => Quote::STATUS_PENDIENTE,
+        ]);
+
+        $job = $this->service()->createJob($quote);
+
+        $this->assertSame($category->id, $job->service_category_id);
+        $this->assertDatabaseHas('service_jobs', [
+            'id' => $job->id,
+            'service_category_id' => $category->id,
+        ]);
+    }
+
+    public function test_create_job_idempotente_conserva_la_categoria(): void
+    {
+        $quote = $this->makeQuote($this->client(), $this->provider());
+
+        $first = $this->service()->createJob($quote);
+        $second = $this->service()->createJob($quote->refresh());
+
+        $this->assertSame($first->service_category_id, $second->service_category_id);
+        $this->assertSame($this->category()->id, $second->service_category_id);
+    }
+
     // --- GET /jobs ---------------------------------------------------------
 
     public function test_listado_incluye_trabajos_como_cliente_y_como_prestador(): void

@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Portfolio;
 use App\Models\ProviderProfile;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -14,16 +15,17 @@ class PortfolioFactory extends Factory
     protected $model = Portfolio::class;
 
     /**
-     * provider_profile_id no tiene valor por defecto (no existe ProviderProfileFactory):
-     * usar forProvider() o pasar el atributo.
+     * Por defecto crea un Perfil_Prestador activo; usar forProvider() para uno concreto.
      *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
+            'provider_profile_id' => ProviderProfile::factory(),
             'name' => fake()->unique()->words(3, true),
             'description' => fake()->optional()->sentence(),
+            'service_category_id' => ServiceCategory::factory(),
         ];
     }
 
